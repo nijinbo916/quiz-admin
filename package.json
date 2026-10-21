@@ -1,0 +1,27 @@
+{
+  "name": "quiz-admin",
+  "version": "1.0.0",
+  "description": "Quiz 后台管理系统 —— Vue2 + Element UI（Web开发技术 第五次作业）",
+  "private": true,
+  "scripts": {
+    "serve": "vue-cli-service serve",
+    "build": "vue-cli-service build"
+  },
+  "dependencies": {
+    "core-js": "^3.8.3",
+    "element-ui": "2.15.14",
+    "vue": "2.7.16",
+    "vue-router": "3.6.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.22.0",
+    "@vue/cli-plugin-babel": "~5.0.8",
+    "@vue/cli-service": "~5.0.8",
+    "vue-template-compiler": "2.7.16"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ]
+}

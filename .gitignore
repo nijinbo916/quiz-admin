@@ -1,0 +1,16 @@
+node_modules/
+.DS_Store
+Thumbs.db
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+.env.local
+.env.*.local
+
+.idea/
+.vscode/*.log
+
+# 注意：dist/ 故意不忽略 —— 老师的提交要求是「编译生成后的 html 代码部署到 vercel」，
+# 所以把打包产物一起提交，Vercel 直接当静态站点托管，无需在云端重新构建。
