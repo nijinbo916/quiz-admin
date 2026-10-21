@@ -7,7 +7,7 @@ Web 开发技术课程第五次作业：使用 **Vue 2 + Element UI** 搭建一�
 
 | 地址 | 说明 |
 | --- | --- |
-| Vercel（提交用） | https://quiz-admin-<to-be-filled>.vercel.app/ |
+| Vercel（提交用） | https://quiz-admin-kohl.vercel.app/ |
 | GitHub Pages（备用） | https://nijinbo916.github.io/quiz-admin/ |
 
 > 国内访问 `*.vercel.app` 可能被 DNS 污染，打不开时请使用上面的 GitHub Pages 备用地址。
