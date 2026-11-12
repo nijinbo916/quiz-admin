@@ -3,34 +3,29 @@
     <div class="page-head">
       <div>
         <h2 class="page-title">题目管理</h2>
-        <p class="page-desc">维护 quiz-game 的题库：编辑题干与选项、标记正确答案，并可按分类筛选。</p>
+        <p class="page-desc">题库数据来自 Java 后端 <code>/questions</code> 接口，分页、关键词查询、增删改都走真实接口。</p>
       </div>
       <div class="head-tags">
-        <el-tag type="info" effect="plain" size="small">共 {{ questions.length }} 道题</el-tag>
-        <el-tag type="success" effect="plain" size="small">{{ categories.length }} 个分类</el-tag>
+        <el-tag type="info" effect="plain" size="small">共 {{ total }} 道题</el-tag>
+        <el-tag type="success" effect="plain" size="small">第 {{ currentPage }} / {{ maxPage }} 页</el-tag>
       </div>
     </div>
 
     <div class="panel">
-      <el-form :inline="true" :model="query" class="query-form" @submit.native.prevent>
+      <el-form :inline="true" class="query-form" @submit.native.prevent>
         <el-form-item label="题目">
           <el-input
-            v-model="query.keyword"
+            v-model="keyword"
             placeholder="输入题干关键词"
             clearable
             prefix-icon="el-icon-search"
-            style="width: 220px"
-            @keyup.enter.native="handleQuery"
-            @clear="handleQuery"
+            style="width: 260px"
+            @keyup.enter.native="onSearch"
+            @clear="handleReset"
           />
         </el-form-item>
-        <el-form-item label="分类">
-          <el-select v-model="query.category" placeholder="全部分类" clearable style="width: 140px">
-            <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
-          </el-select>
-        </el-form-item>
         <el-form-item>
-          <el-button type="primary" icon="el-icon-search" @click="handleQuery">查询</el-button>
+          <el-button type="primary" icon="el-icon-search" @click="onSearch">查询</el-button>
           <el-button icon="el-icon-refresh" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -48,11 +43,14 @@
             批量删除{{ selection.length ? '（' + selection.length + '）' : '' }}
           </el-button>
         </div>
-        <span class="muted">当前筛选出 {{ filteredList.length }} 道题</span>
+        <span class="muted">
+          {{ keyword ? '关键词「' + keyword + '」命中 ' + total + ' 条' : '当前共 ' + total + ' 道题' }}
+        </span>
       </div>
 
       <el-table
-        :data="pagedList"
+        v-loading="loading"
+        :data="tableData"
         border
         stripe
         row-key="id"
@@ -60,29 +58,29 @@
       >
         <el-table-column type="selection" width="46" align="center" />
         <el-table-column label="序号" width="70" align="center">
-          <template slot-scope="scope">{{ (page - 1) * size + scope.$index + 1 }}</template>
+          <template slot-scope="scope">{{ (currentPage - 1) * pageSize + scope.$index + 1 }}</template>
         </el-table-column>
         <el-table-column label="题干" min-width="260">
           <template slot-scope="scope">
-            <span class="stem">{{ scope.row.title }}</span>
+            <span class="stem">{{ scope.row.questionText }}</span>
           </template>
         </el-table-column>
         <el-table-column label="分类" width="105" align="center">
           <template slot-scope="scope">
-            <el-tag size="small" effect="plain">{{ scope.row.category }}</el-tag>
+            <el-tag size="small" effect="plain">{{ scope.row.category || '未分类' }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="选项" min-width="250">
           <template slot-scope="scope">
             <div class="option-line" v-for="(option, index) in scope.row.options" :key="index">
               <span class="option-label">{{ labels[index] }}</span>
-              <span :class="{ 'option-right': index === scope.row.answer }">{{ option }}</span>
+              <span :class="{ 'option-right': index === answerIndexOf(scope.row) }">{{ option }}</span>
             </div>
           </template>
         </el-table-column>
         <el-table-column label="答案" width="80" align="center">
           <template slot-scope="scope">
-            <el-tag type="success" size="small">{{ labels[scope.row.answer] }}</el-tag>
+            <el-tag type="success" size="small">{{ scope.row.answerLabel }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200" align="center">
@@ -110,12 +108,12 @@
         class="pager"
         background
         @size-change="handleSizeChange"
-        @current-change="handleCurrentChange"
-        :current-page="page"
-        :page-sizes="[5, 10, 20, 50]"
-        :page-size="size"
+        @current-change="handlePageChange"
+        :current-page="currentPage"
+        :page-sizes="[5, 10, 20]"
+        :page-size="pageSize"
         layout="total, sizes, prev, pager, next, jumper"
-        :total="filteredList.length"
+        :total="total"
       />
     </div>
 
@@ -128,9 +126,9 @@
       @closed="handleDialogClosed"
     >
       <el-form ref="questionForm" :model="form" :rules="rules" label-width="82px">
-        <el-form-item label="题干" prop="title">
+        <el-form-item label="题干" prop="question">
           <el-input
-            v-model="form.title"
+            v-model="form.question"
             type="textarea"
             :rows="2"
             maxlength="120"
@@ -140,7 +138,7 @@
         </el-form-item>
         <el-form-item label="分类" prop="category">
           <el-select v-model="form.category" placeholder="请选择分类" style="width: 180px">
-            <el-option v-for="item in allCategories" :key="item" :label="item" :value="item" />
+            <el-option v-for="item in categories" :key="item" :label="item" :value="item" />
           </el-select>
         </el-form-item>
 
@@ -151,33 +149,11 @@
           :prop="'options.' + index"
           :rules="{ required: true, message: '选项内容不能为空', trigger: 'blur' }"
         >
-          <div class="option-edit">
-            <el-input v-model="form.options[index]" maxlength="60" placeholder="选项内容" />
-            <el-button
-              type="text"
-              class="danger-text"
-              icon="el-icon-remove-outline"
-              :disabled="form.options.length <= 2"
-              @click="removeOption(index)"
-            >
-              删除
-            </el-button>
-          </div>
+          <el-input v-model="form.options[index]" maxlength="60" placeholder="选项内容" />
         </el-form-item>
 
-        <el-form-item>
-          <el-button
-            type="text"
-            icon="el-icon-circle-plus-outline"
-            :disabled="form.options.length >= 6"
-            @click="addOption"
-          >
-            添加选项（最多 6 个）
-          </el-button>
-        </el-form-item>
-
-        <el-form-item label="正确答案" prop="answer">
-          <el-radio-group v-model="form.answer">
+        <el-form-item label="正确答案" prop="answerIndex">
+          <el-radio-group v-model="form.answerIndex">
             <el-radio v-for="(option, index) in form.options" :key="index" :label="index">
               {{ labels[index] }}
             </el-radio>
@@ -195,15 +171,19 @@
     <el-dialog title="题目预览" :visible.sync="previewVisible" width="520px">
       <div v-if="previewRow" class="preview">
         <div class="preview-meta">
-          <el-tag size="small" effect="plain">{{ previewRow.category }}</el-tag>
-          <span class="muted">正确答案：{{ labels[previewRow.answer] }}</span>
+          <el-tag size="small" effect="plain">{{ previewRow.category || '未分类' }}</el-tag>
+          <span class="muted">正确答案：{{ previewRow.answerLabel }} · {{ previewRow.answer }}</span>
         </div>
-        <h3 class="preview-title">{{ previewRow.title }}</h3>
+        <h3 class="preview-title">{{ previewRow.questionText }}</h3>
         <ul class="preview-options">
-          <li v-for="(option, index) in previewRow.options" :key="index" :class="{ right: index === previewRow.answer }">
+          <li
+            v-for="(option, index) in previewRow.options"
+            :key="index"
+            :class="{ right: index === answerIndexOf(previewRow) }"
+          >
             <span class="option-label">{{ labels[index] }}</span>
             {{ option }}
-            <i v-if="index === previewRow.answer" class="el-icon-check"></i>
+            <i v-if="index === answerIndexOf(previewRow)" class="el-icon-check"></i>
           </li>
         </ul>
       </div>
@@ -215,34 +195,43 @@
 </template>
 
 <script>
-import { state, store } from '@/store'
+import axios from 'axios'
+import { state } from '@/store'
 
-const LABELS = ['A', 'B', 'C', 'D', 'E', 'F']
-const FIXED_CATEGORIES = ['HTML', 'CSS', 'JavaScript', 'Vue', '网络']
+const LABELS = ['A', 'B', 'C', 'D']
+const ANSWER_KEYS = ['a', 'b', 'c', 'd']
+const CATEGORIES = ['HTML', 'CSS', 'JavaScript', 'Vue', '网络']
 
 function emptyForm() {
   return {
     id: null,
-    title: '',
+    question: '',
     category: 'HTML',
     options: ['', '', '', ''],
-    answer: 0
+    answerIndex: 0
   }
+}
+
+/** 后端返回的答案字母 A/B/C/D → 选项下标 0~3 */
+function labelToIndex(label) {
+  const index = LABELS.indexOf((label || '').toUpperCase())
+  return index < 0 ? 0 : index
 }
 
 export default {
   name: 'QuestionView',
   data() {
     return {
-      state,
       labels: LABELS,
-      allCategories: FIXED_CATEGORIES,
-      query: {
-        keyword: '',
-        category: ''
-      },
-      page: 1,
-      size: 5,
+      categories: CATEGORIES,
+      keyword: '',
+      tableData: [],
+      total: 0,
+      currentPage: 1,
+      pageSize: 5,
+      loading: false,
+      // 后端连不上时置为 true，表格回退到 store 里的演示数据，线上静态预览不至于开天窗
+      demoMode: false,
       selection: [],
       dialogVisible: false,
       dialogTitle: '添加题目',
@@ -251,164 +240,288 @@ export default {
       previewVisible: false,
       previewRow: null,
       rules: {
-        title: [
+        question: [
           { required: true, message: '请输入题干', trigger: 'blur' },
           { min: 4, message: '题干至少 4 个字', trigger: 'blur' }
         ],
-        category: [{ required: true, message: '请选择分类', trigger: 'change' }],
-        answer: [{ required: true, message: '请选择正确答案', trigger: 'change' }]
+        category: [{ required: true, message: '请选择分类', trigger: 'change' }]
       }
     }
   },
   computed: {
-    questions() {
-      return state.questions
-    },
-    categories() {
-      const set = {}
-      this.questions.forEach(item => {
-        if (item.category) set[item.category] = true
-      })
-      return Object.keys(set)
-    },
-    filteredList() {
-      const keyword = this.query.keyword.trim().toLowerCase()
-      const category = this.query.category
-
-      return this.questions.filter(item => {
-        const matchKeyword = !keyword || item.title.toLowerCase().indexOf(keyword) !== -1
-        const matchCategory = !category || item.category === category
-        return matchKeyword && matchCategory
-      })
-    },
-    pagedList() {
-      const start = (this.page - 1) * this.size
-      return this.filteredList.slice(start, start + this.size)
+    maxPage() {
+      return Math.max(1, Math.ceil(this.total / this.pageSize))
     }
   },
-  watch: {
-    filteredList() {
-      const maxPage = Math.max(1, Math.ceil(this.filteredList.length / this.size))
-      if (this.page > maxPage) {
-        this.page = maxPage
-      }
-    }
+  mounted() {
+    this.loadPage(1)
   },
   methods: {
-    handleQuery() {
-      this.page = 1
+    answerIndexOf(row) {
+      return labelToIndex(row.answerLabel)
     },
+
+    /** 调后端分页接口，加载指定页；后端没启动就回退到演示数据 */
+    loadPage(page) {
+      this.loading = true
+      return axios
+        .get('/questions', { params: { page, pageSize: this.pageSize } })
+        .then(response => {
+          const result = response.data
+          if (result.code !== 1) {
+            throw new Error(result.msg || '加载失败')
+          }
+          this.demoMode = false
+          this.tableData = result.data.qsBeanList
+          this.total = result.data.total
+          this.currentPage = page
+        })
+        .catch(() => {
+          this.useFallback(page)
+        })
+        .finally(() => {
+          this.loading = false
+        })
+    },
+
+    /**
+     * 演示兜底：Vercel / Pages 上的静态版没有 Java 后端，
+     * 这时用 store 里的示例题库按同样的字段结构本地分页，页面照常能看。
+     */
+    useFallback(page) {
+      if (!this.demoMode) {
+        this.demoMode = true
+        this.$message.info('未连接到 Java 后端，当前展示演示数据；本地启动 quiz-java 后即可联调')
+      }
+
+      const keyword = this.keyword.trim().toLowerCase()
+      const rows = state.questions
+        .filter(item => !keyword || item.title.toLowerCase().indexOf(keyword) !== -1)
+        .map(item => ({
+          id: item.id,
+          questionText: item.title,
+          options: item.options,
+          answerLabel: LABELS[item.answer] || 'A',
+          category: item.category
+        }))
+
+      this.total = rows.length
+      const start = (page - 1) * this.pageSize
+      this.tableData = rows.slice(start, start + this.pageSize)
+      this.currentPage = page
+    },
+
+    /** 关键词查询：走 /findQuestion，同样带分页 */
+    onSearch() {
+      const kw = this.keyword.trim()
+      if (!kw) {
+        this.loadPage(1)
+        return
+      }
+
+      this.loading = true
+      axios
+        .get('/findQuestion', { params: { keyword: kw, page: 1, pageSize: this.pageSize } })
+        .then(response => {
+          const result = response.data
+          if (result.code !== 1) {
+            throw new Error(result.msg || '查询失败')
+          }
+          this.demoMode = false
+          this.tableData = result.data.qsBeanList
+          this.total = result.data.total
+          this.currentPage = 1
+        })
+        .catch(() => {
+          this.useFallback(1)
+        })
+        .finally(() => {
+          this.loading = false
+        })
+    },
+
     handleReset() {
-      this.query.keyword = ''
-      this.query.category = ''
-      this.page = 1
+      this.keyword = ''
+      this.loadPage(1)
     },
-    handleSizeChange(val) {
-      this.size = val
-      this.page = 1
+
+    handlePageChange(page) {
+      this.loadPage(page)
     },
-    handleCurrentChange(val) {
-      this.page = val
+
+    handleSizeChange(size) {
+      this.pageSize = size
+      this.loadPage(1)
     },
+
     handleSelectionChange(rows) {
       this.selection = rows
     },
-    addOption() {
-      if (this.form.options.length >= 6) return
-      this.form.options.push('')
-    },
-    removeOption(index) {
-      if (this.form.options.length <= 2) return
-      this.form.options.splice(index, 1)
 
-      // 删除后同步修正正确答案的下标，避免答案错位
-      if (this.form.answer > index) {
-        this.form.answer -= 1
-      } else if (this.form.answer === index) {
-        this.form.answer = Math.min(index, this.form.options.length - 1)
-      }
-    },
     openAdd() {
       this.dialogTitle = '添加题目'
       this.form = emptyForm()
       this.dialogVisible = true
     },
+
     openEdit(row) {
       this.dialogTitle = '编辑题目'
       this.form = {
         id: row.id,
-        title: row.title,
-        category: row.category,
-        options: row.options.slice(),
-        answer: row.answer
+        question: row.questionText,
+        category: row.category || 'HTML',
+        options: row.options.slice(0, 4),
+        answerIndex: this.answerIndexOf(row)
       }
       this.dialogVisible = true
     },
+
     openPreview(row) {
       this.previewRow = row
       this.previewVisible = true
     },
+
     handleDialogClosed() {
       if (this.$refs.questionForm) {
         this.$refs.questionForm.resetFields()
       }
     },
+
+    /** 把表单转成后端 QSBean 的结构：题干 + 四个选项 + 答案字母 */
+    buildPayload() {
+      const options = this.form.options.map(item => item.trim())
+      return {
+        question: this.form.question.trim(),
+        optiona: options[0],
+        optionb: options[1],
+        optionc: options[2],
+        optiond: options[3],
+        answer: ANSWER_KEYS[this.form.answerIndex],
+        category: this.form.category
+      }
+    },
+
     submitForm() {
       this.$refs.questionForm.validate(valid => {
         if (!valid) return
 
-        const options = this.form.options.map(item => item.trim())
-        if (options.filter(item => item).length < 2) {
-          this.$message.warning('至少需要 2 个非空选项')
+        if (this.demoMode) {
+          this.$message.info('演示模式：请先在本地启动 quiz-java 后端，再增删改题目')
+          return
+        }
+
+        const payload = this.buildPayload()
+        if (!payload.optiona || !payload.optionb || !payload.optionc || !payload.optiond) {
+          this.$message.warning('四个选项都要填')
           return
         }
 
         this.submitting = true
-        const payload = {
-          title: this.form.title.trim(),
-          category: this.form.category,
-          options,
-          answer: this.form.answer
-        }
+        const isEdit = Boolean(this.form.id)
+        const request = isEdit
+          ? axios.post('/updateQuestion', payload, {
+              params: { id: this.form.id },
+              headers: { 'Content-Type': 'application/json' }
+            })
+          : axios.post('/addQuestion', payload, {
+              headers: { 'Content-Type': 'application/json' }
+            })
 
-        window.setTimeout(() => {
-          if (this.form.id) {
-            store.updateQuestion(this.form.id, payload)
-            this.$message.success('修改成功')
-          } else {
-            store.addQuestion(payload)
-            this.$message.success('添加成功')
-          }
-          this.submitting = false
-          this.dialogVisible = false
-        }, 260)
+        request
+          .then(response => {
+            const result = response.data
+            if (result.code !== 1) {
+              this.$message.error(result.msg || '保存失败')
+              return
+            }
+            this.$message.success(isEdit ? '修改成功' : '添加成功')
+            this.dialogVisible = false
+            this.loadPage(this.currentPage)
+          })
+          .catch(error => {
+            this.$message.error(this.errorText(error, '保存失败'))
+          })
+          .finally(() => {
+            this.submitting = false
+          })
       })
     },
+
     handleDelete(row) {
-      this.$confirm('确定要删除题目「' + row.title + '」吗？', '删除确认', {
+      this.$confirm('确定要删除题目「' + row.questionText + '」吗？', '删除确认', {
         confirmButtonText: '确定删除',
         cancelButtonText: '取消',
         type: 'warning'
       })
-        .then(() => {
-          store.removeQuestions([row.id])
-          this.$message.success('删除成功')
-        })
+        .then(() => this.deleteById(row.id))
         .catch(() => {})
     },
+
+    /** 后端只有按 id 删除的接口，批量删除就逐个调用 */
     handleBatchDelete() {
       if (!this.selection.length) return
-      this.$confirm('确定要删除选中的 ' + this.selection.length + ' 道题目吗？', '批量删除', {
+      const rows = this.selection.slice()
+
+      this.$confirm('确定要删除选中的 ' + rows.length + ' 道题目吗？', '批量删除', {
         confirmButtonText: '确定删除',
         cancelButtonText: '取消',
         type: 'warning'
       })
-        .then(() => {
-          store.removeQuestions(this.selection.map(item => item.id))
+        .then(async () => {
+          if (this.demoMode) {
+            this.$message.info('演示模式：请先在本地启动 quiz-java 后端，再增删改题目')
+            return
+          }
+          this.loading = true
+          let success = 0
+          for (const row of rows) {
+            try {
+              const response = await axios.get('/delQuestion', { params: { id: row.id } })
+              if (response.data.code === 1) success += 1
+            } catch (error) {
+              console.error('删除失败：' + row.id, error)
+            }
+          }
+          this.loading = false
           this.selection = []
-          this.$message.success('批量删除成功')
+          this.$message.success('已删除 ' + success + ' 道题目')
+          this.loadPage(this.currentPage)
         })
         .catch(() => {})
+    },
+
+    deleteById(id) {
+      if (this.demoMode) {
+        this.$message.info('演示模式：请先在本地启动 quiz-java 后端，再增删改题目')
+        return
+      }
+      this.loading = true
+      axios
+        .get('/delQuestion', { params: { id } })
+        .then(response => {
+          const result = response.data
+          if (result.code !== 1) {
+            this.$message.error(result.msg || '删除失败')
+            return
+          }
+          this.$message.success('删除成功')
+          // 删掉当前页最后一条时往前翻一页，避免停在空白页
+          const page = this.tableData.length === 1 && this.currentPage > 1 ? this.currentPage - 1 : this.currentPage
+          this.loadPage(page)
+        })
+        .catch(error => {
+          this.$message.error(this.errorText(error, '删除失败'))
+        })
+        .finally(() => {
+          this.loading = false
+        })
+    },
+
+    errorText(error, fallback) {
+      if (error && error.response && error.response.data && error.response.data.msg) {
+        return error.response.data.msg
+      }
+      return fallback
     }
   }
 }
@@ -424,6 +537,13 @@ export default {
   padding: 2px 0 4px;
   border-bottom: 1px dashed #ebeef5;
   margin-bottom: 16px;
+}
+
+.page-desc code {
+  background: #f4f4f5;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-size: 12px;
 }
 
 .stem {
@@ -446,12 +566,6 @@ export default {
 .option-right {
   color: #67c23a;
   font-weight: 600;
-}
-
-.option-edit {
-  display: flex;
-  align-items: center;
-  gap: 10px;
 }
 
 .danger-text {

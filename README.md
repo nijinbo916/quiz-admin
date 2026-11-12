@@ -3,6 +3,9 @@
 Web 开发技术课程第五次作业：使用 **Vue 2 + Element UI** 搭建一个题库后台管理系统，
 包含数据看板、用户管理、题目管理三个页面，把 quiz-game 的用户与题目搬到后台里维护。
 
+第八次课（11-6）完成**题目页与 Java 后端的前后端联调**：题目的分页、关键词查询、增删改
+全部改为调用 `quiz-java` 后端的真实接口（axios），数据看板的题库统计也改为读后端数据。
+
 ## 在线预览
 
 | 地址 | 说明 |
@@ -11,13 +14,15 @@ Web 开发技术课程第五次作业：使用 **Vue 2 + Element UI** 搭建一�
 | GitHub Pages（备用） | https://nijinbo916.github.io/quiz-admin/ |
 
 > 国内访问 `*.vercel.app` 可能被 DNS 污染，打不开时请使用上面的 GitHub Pages 备用地址。
+> 线上静态版没有 Java 后端，题目页会自动回退到演示数据并提示；本地启动后端后即是完整的联调版本。
 
 ## 技术栈
 
 - Vue 2.7.16 + vue-router 3.6.5（hash 模式，静态托管无需服务端重写）
 - Element UI 2.15.14（表格、表单、对话框、分页、菜单、时间线等组件）
+- axios：题目管理、数据看板调用 Java 后端接口（`/questions`、`/findQuestion`、`/addQuestion`、`/updateQuestion`、`/delQuestion`）
 - Vue CLI 5（webpack 5）打包，`publicPath: './'`，产物可放任意子目录
-- 数据层：`Vue.observable` 轻量全局 store + `localStorage` 持久化（本项目无后端）
+- 用户数据：`Vue.observable` 轻量全局 store + `localStorage` 持久化
 
 ## 功能清单
 
@@ -37,13 +42,18 @@ Web 开发技术课程第五次作业：使用 **Vue 2 + Element UI** 搭建一�
 - 分页（5 / 10 / 20 / 50 条每页），删除后自动修正页码
 - 一键导出全部用户与题目为 JSON 文件
 
-**题目管理 `/question`**
+**题目管理 `/question`（前后端联调版）**
 
-- 关键词 + 分类筛选
-- 表格展示题干、分类、选项（正确答案标绿）、答案字母
-- 新增 / 编辑弹窗：支持 2 - 6 个动态增减选项、单选标记正确答案
+- 题目列表、分页走后端 `GET /questions?page=&pageSize=`，共 N 条、第 N 页由后端 total 驱动
+- 关键词查询走 `GET /findQuestion?keyword=`，同样支持分页
+- 新增 / 编辑弹窗提交 JSON 到 `POST /addQuestion`、`POST /updateQuestion?id=`，选项固定 4 个（与后端 questions 表结构对应），答案用 a/b/c/d 表示
+- 删除走 `GET /delQuestion?id=`（后端逻辑删除），批量删除逐条调用并汇总结果
 - 题目预览（学生视角查看题干与选项，正确答案高亮）
-- 单条删除、批量删除、分页
+- 后端未启动时自动回退演示数据，并提示进入演示模式
+
+**数据看板 `/dashboard`**
+
+- 题库总量 / 分类数 / 平均选项数改为统计后端题库；后端没开时回退示例数据
 
 **通用**
 
@@ -77,10 +87,20 @@ quiz-admin/
 
 ## 本地运行
 
+题目页需要 Java 后端（仓库 `nijinbo916/quiz-java`）：
+
 ```bash
+# 1. 先启动后端（默认 8080）：启动 MySQL 后在 quiz-java 目录执行
+mvn spring-boot:run -Dspring-boot.run.arguments=--server.port=8080
+
+# 2. 再启动前端
 npm install
-npm run serve     # http://localhost:8080
+npm run serve     # http://localhost:8081
 ```
+
+- 前端开发服务器端口是 **8081**（8080 留给 Java 后端）
+- `vue.config.js` 里已配代理：页面里写 `/questions` 这样的相对路径，开发时自动转发到 `http://localhost:8080`，不用处理跨域
+- 后端没启动时页面也能打开，题目页会进入演示模式
 
 ## 打包部署
 

@@ -156,6 +156,7 @@
 <script>
 import StatCard from '@/components/StatCard.vue'
 import { state } from '@/store'
+import axios from 'axios'
 
 const BAR_COLORS = ['#409eff', '#67c23a', '#e6a23c', '#f56c6c', '#909399', '#9254de']
 
@@ -164,7 +165,9 @@ export default {
   components: { StatCard },
   data() {
     return {
-      state
+      state,
+      // 从后端题库拉来的题目，用来算真实的题量与分类占比
+      remoteQuestions: []
     }
   },
   computed: {
@@ -172,7 +175,8 @@ export default {
       return state.users
     },
     questions() {
-      return state.questions
+      // 后端有数据就用后端的，没启动时回退到 store 里的示例数据，看板不至于空白
+      return this.remoteQuestions.length ? this.remoteQuestions : state.questions
     },
     userCount() {
       return this.users.length
@@ -242,6 +246,24 @@ export default {
     logs() {
       return state.logs
     }
+  },
+  mounted() {
+    // 题库总量不大，一次取一百条直接算统计，不用后端再开新接口
+    axios
+      .get('/questions', { params: { page: 1, pageSize: 100 } })
+      .then(response => {
+        const result = response.data
+        if (result.code !== 1) return
+        this.remoteQuestions = result.data.qsBeanList.map(item => ({
+          id: item.id,
+          title: item.questionText,
+          category: item.category || '未分类',
+          options: item.options
+        }))
+      })
+      .catch(() => {
+        // 后端没开就先看示例数据，不弹提示打断看板
+      })
   }
 }
 </script>
