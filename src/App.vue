@@ -1,5 +1,8 @@
 <template>
-  <el-container class="app">
+  <!-- 登录页独立布局，不带侧边栏 -->
+  <router-view v-if="isLoginPage" />
+
+  <el-container v-else class="app">
     <!-- 左侧导航 -->
     <el-aside width="216px" class="app-aside">
       <div class="brand">
@@ -49,10 +52,10 @@
       </el-menu>
 
       <div class="aside-user">
-        <div class="avatar">倪</div>
+        <div class="avatar">{{ username.charAt(0) || '管' }}</div>
         <div class="aside-user-text">
-          <strong>倪金博</strong>
-          <span>2412190727 · 计科2403</span>
+          <strong>{{ username || '管理员' }}</strong>
+          <span>{{ isDemo ? '演示模式' : '2412190727 · 计科2403' }}</span>
         </div>
       </div>
     </el-aside>
@@ -73,6 +76,9 @@
             <template v-else>数据保存在本地浏览器</template>
           </span>
           <el-button size="mini" icon="el-icon-refresh-left" @click="handleReset">重置演示数据</el-button>
+          <el-button size="mini" type="danger" plain icon="el-icon-switch-button" @click="handleLogout">
+            退出登录
+          </el-button>
         </div>
       </el-header>
 
@@ -85,21 +91,38 @@
 
 <script>
 import { state, store } from '@/store'
+import { getUsername, getToken, clearAuth } from '@/utils/http'
 
 export default {
   name: 'App',
   data() {
     return {
-      state
+      state,
+      username: ''
     }
   },
   computed: {
+    isLoginPage() {
+      return this.$route.path === '/login'
+    },
+    isDemo() {
+      return getToken() === 'demo-token'
+    },
     activeMenu() {
       return this.$route.path
     },
     currentTitle() {
       return (this.$route.meta && this.$route.meta.title) || '数据看板'
     }
+  },
+  watch: {
+    // 进入 / 离开登录页时刷新一下当前登录人
+    $route() {
+      this.username = getUsername()
+    }
+  },
+  created() {
+    this.username = getUsername()
   },
   methods: {
     handleReset() {
@@ -111,6 +134,18 @@ export default {
         .then(() => {
           store.reset()
           this.$message.success('已恢复初始演示数据')
+        })
+        .catch(() => {})
+    },
+    handleLogout() {
+      this.$confirm('确定要退出登录吗？', '退出登录', {
+        confirmButtonText: '退出',
+        cancelButtonText: '取消',
+        type: 'warning'
+      })
+        .then(() => {
+          clearAuth()
+          this.$router.push('/login')
         })
         .catch(() => {})
     }

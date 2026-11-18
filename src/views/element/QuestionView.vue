@@ -195,7 +195,7 @@
 </template>
 
 <script>
-import axios from 'axios'
+import http from '@/utils/http'
 import { state } from '@/store'
 
 const LABELS = ['A', 'B', 'C', 'D']
@@ -264,7 +264,7 @@ export default {
     /** 调后端分页接口，加载指定页；后端没启动就回退到演示数据 */
     loadPage(page) {
       this.loading = true
-      return axios
+      return http
         .get('/questions', { params: { page, pageSize: this.pageSize } })
         .then(response => {
           const result = response.data
@@ -320,7 +320,7 @@ export default {
       }
 
       this.loading = true
-      axios
+      http
         .get('/findQuestion', { params: { keyword: kw, page: 1, pageSize: this.pageSize } })
         .then(response => {
           const result = response.data
@@ -419,11 +419,11 @@ export default {
         this.submitting = true
         const isEdit = Boolean(this.form.id)
         const request = isEdit
-          ? axios.post('/updateQuestion', payload, {
+          ? http.post('/updateQuestion', payload, {
               params: { id: this.form.id },
               headers: { 'Content-Type': 'application/json' }
             })
-          : axios.post('/addQuestion', payload, {
+          : http.post('/addQuestion', payload, {
               headers: { 'Content-Type': 'application/json' }
             })
 
@@ -476,7 +476,7 @@ export default {
           let success = 0
           for (const row of rows) {
             try {
-              const response = await axios.get('/delQuestion', { params: { id: row.id } })
+              const response = await http.get('/delQuestion', { params: { id: row.id } })
               if (response.data.code === 1) success += 1
             } catch (error) {
               console.error('删除失败：' + row.id, error)
@@ -496,7 +496,7 @@ export default {
         return
       }
       this.loading = true
-      axios
+      http
         .get('/delQuestion', { params: { id } })
         .then(response => {
           const result = response.data

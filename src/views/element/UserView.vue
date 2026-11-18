@@ -3,36 +3,32 @@
     <div class="page-head">
       <div>
         <h2 class="page-title">用户管理</h2>
-        <p class="page-desc">维护参与答题的用户账号，支持关键词检索、新增、编辑、删除与分页浏览。</p>
+        <p class="page-desc">
+          用户数据来自 Java 后端 <code>/users</code> 接口：分页、关键词查询、添加（可选角色）、删除、重置密码都是真实接口。
+        </p>
       </div>
       <div class="head-tags">
-        <el-tag type="info" effect="plain" size="small">共 {{ users.length }} 位用户</el-tag>
-        <el-tag type="success" effect="plain" size="small">数据自动保存</el-tag>
+        <el-tag type="info" effect="plain" size="small">共 {{ total }} 位用户</el-tag>
+        <el-tag type="success" effect="plain" size="small">第 {{ currentPage }} / {{ maxPage }} 页</el-tag>
       </div>
     </div>
 
     <div class="panel">
       <!-- 顶部查询表单 -->
-      <el-form :inline="true" :model="query" class="query-form" @submit.native.prevent>
+      <el-form :inline="true" class="query-form" @submit.native.prevent>
         <el-form-item label="用户名">
           <el-input
-            v-model="query.keyword"
+            v-model="keyword"
             placeholder="输入用户名关键词"
             clearable
             prefix-icon="el-icon-search"
-            style="width: 220px"
-            @keyup.enter.native="handleQuery"
-            @clear="handleQuery"
+            style="width: 240px"
+            @keyup.enter.native="onSearch"
+            @clear="handleReset"
           />
         </el-form-item>
-        <el-form-item label="角色">
-          <el-select v-model="query.role" placeholder="全部角色" clearable style="width: 130px">
-            <el-option label="管理员" value="管理员" />
-            <el-option label="学生" value="学生" />
-          </el-select>
-        </el-form-item>
         <el-form-item>
-          <el-button type="primary" icon="el-icon-search" @click="handleQuery">查询</el-button>
+          <el-button type="primary" icon="el-icon-search" @click="onSearch">查询</el-button>
           <el-button icon="el-icon-refresh" @click="handleReset">重置</el-button>
         </el-form-item>
       </el-form>
@@ -50,58 +46,55 @@
             批量删除{{ selection.length ? '（' + selection.length + '）' : '' }}
           </el-button>
         </div>
-        <div class="toolbar-group">
-          <el-button icon="el-icon-download" @click="handleExport">导出数据</el-button>
-          <span class="muted">当前筛选出 {{ filteredList.length }} 条</span>
-        </div>
+        <span class="muted">
+          {{ keyword ? '关键词「' + keyword + '」命中 ' + total + ' 条' : '当前共 ' + total + ' 位用户' }}
+        </span>
       </div>
 
       <!-- 用户表格 -->
       <el-table
         ref="userTable"
-        :data="pagedList"
+        v-loading="loading"
+        :data="tableData"
         border
         stripe
         row-key="id"
         @selection-change="handleSelectionChange"
       >
         <el-table-column type="selection" width="46" align="center" />
-        <el-table-column label="日期" width="130">
-          <template slot-scope="scope">
-            <span class="cell-muted">{{ scope.row.date }}</span>
-          </template>
-        </el-table-column>
+        <el-table-column label="ID" prop="id" width="70" align="center" />
         <el-table-column label="用户名" min-width="140">
           <template slot-scope="scope">
             <span class="cell-name">{{ scope.row.name }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="密码" min-width="170">
+        <el-table-column label="密码" min-width="140">
           <template slot-scope="scope">
-            <div class="pwd-cell">
-              <span class="pwd-text">{{ isVisible(scope.row.id) ? scope.row.password : '••••••' }}</span>
-              <el-button
-                type="text"
-                size="mini"
-                icon="el-icon-view"
-                :class="{ 'is-active': isVisible(scope.row.id) }"
-                @click="togglePassword(scope.row.id)"
-              >
-                {{ isVisible(scope.row.id) ? '隐藏' : '显示' }}
-              </el-button>
-            </div>
+            <span class="pwd-text">{{ scope.row.password }}</span>
           </template>
         </el-table-column>
         <el-table-column label="角色" width="110" align="center">
           <template slot-scope="scope">
-            <el-tag :type="scope.row.role === '管理员' ? 'warning' : 'info'" size="small" effect="plain">
+            <el-tag :type="scope.row.isAdmin ? 'warning' : 'info'" size="small" effect="plain">
               {{ scope.row.role }}
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="150" align="center">
+        <el-table-column label="创建日期" width="130" align="center">
           <template slot-scope="scope">
-            <el-button type="text" size="mini" icon="el-icon-edit" @click="openEdit(scope.row)">编辑</el-button>
+            <span class="cell-muted">{{ scope.row.date }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" align="center">
+          <template slot-scope="scope">
+            <el-button
+              type="text"
+              size="mini"
+              icon="el-icon-key"
+              @click="handleResetPwd(scope.row)"
+            >
+              重置密码
+            </el-button>
             <el-button type="text" size="mini" icon="el-icon-delete" class="danger-text" @click="handleDelete(scope.row)">
               删除
             </el-button>
@@ -119,41 +112,39 @@
         background
         @size-change="handleSizeChange"
         @current-change="handleCurrentChange"
-        :current-page="page"
+        :current-page="currentPage"
         :page-sizes="[5, 10, 20, 50]"
-        :page-size="size"
+        :page-size="pageSize"
         layout="total, sizes, prev, pager, next, jumper"
-        :total="filteredList.length"
+        :total="total"
       />
     </div>
 
-    <!-- 添加 / 编辑对话框 -->
+    <!-- 添加用户对话框 -->
     <el-dialog
-      :title="dialogTitle"
+      title="添加用户"
       :visible.sync="dialogVisible"
       width="460px"
       :close-on-click-modal="false"
       @closed="handleDialogClosed"
     >
-      <el-form ref="userForm" :model="form" :rules="rules" label-width="78px" @submit.native.prevent>
+      <el-form ref="userForm" :model="form" :rules="rules" label-width="86px" @submit.native.prevent>
         <el-form-item label="用户名" prop="name">
-          <el-input v-model="form.name" placeholder="2 - 12 个字符" maxlength="12" show-word-limit />
+          <el-input v-model="form.name" placeholder="字母或数字，2 - 16 个字符" maxlength="16" show-word-limit />
         </el-form-item>
         <el-form-item label="密码" prop="password">
-          <el-input v-model="form.password" placeholder="6 - 12 位" maxlength="12" show-password />
+          <el-input v-model="form.password" placeholder="6 - 16 位" maxlength="16" show-password />
         </el-form-item>
-        <el-form-item label="角色" prop="role">
-          <el-radio-group v-model="form.role">
-            <el-radio label="学生">学生</el-radio>
-            <el-radio label="管理员">管理员</el-radio>
+        <el-form-item label="确认密码" prop="checkpassword">
+          <el-input v-model="form.checkpassword" placeholder="再输入一遍密码" maxlength="16" show-password />
+        </el-form-item>
+        <!-- 验收条件 3.2 第 1 条：增加用户时要选择普通用户还是管理员 -->
+        <el-form-item label="用户角色" prop="userrole">
+          <el-radio-group v-model="form.userrole">
+            <el-radio label="0">普通用户</el-radio>
+            <el-radio label="1">管理员</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-alert
-          type="info"
-          :closable="false"
-          show-icon
-          title="本系统为纯前端演示，账号密码仅保存在当前浏览器 localStorage 中。"
-        />
       </el-form>
 
       <span slot="footer">
@@ -165,14 +156,28 @@
 </template>
 
 <script>
+import http, { errorText } from '@/utils/http'
 import { state, store } from '@/store'
+
+/** 把后端的 User 记录转成表格要展示的行 */
+function toRow(user) {
+  return {
+    id: user.id,
+    name: user.userName,
+    // 后端查询接口统一把密码打码成 ******
+    password: user.userPassword || '******',
+    isAdmin: user.userRole === 1,
+    role: user.userRole === 1 ? '管理员' : '普通用户',
+    date: user.createTime ? String(user.createTime).slice(0, 10) : '-'
+  }
+}
 
 function emptyForm() {
   return {
-    id: null,
     name: '',
     password: '',
-    role: '学生'
+    checkpassword: '',
+    userrole: '0'
   }
 }
 
@@ -185,107 +190,150 @@ export default {
         callback(new Error('请输入用户名'))
         return
       }
-      if (name.length < 2 || name.length > 12) {
-        callback(new Error('用户名长度需在 2 - 12 个字符之间'))
+      if (!/^[a-zA-Z0-9]+$/.test(name)) {
+        callback(new Error('用户名只能是字母和数字（后端校验规则）'))
         return
       }
-      const exists = state.users.some(item => item.name === name && item.id !== this.form.id)
-      if (exists) {
-        callback(new Error('该用户名已存在'))
+      callback()
+    }
+    const validateCheck = (rule, value, callback) => {
+      if (!value) {
+        callback(new Error('请再输入一遍密码'))
+        return
+      }
+      if (value !== this.form.password) {
+        callback(new Error('两次输入的密码不一致'))
         return
       }
       callback()
     }
 
     return {
-      state,
-      query: {
-        keyword: '',
-        role: ''
-      },
-      page: 1,
-      size: 5,
+      keyword: '',
+      tableData: [],
+      total: 0,
+      currentPage: 1,
+      pageSize: 5,
+      loading: false,
+      // 后端连不上时置为 true，表格回退到 store 里的演示数据
+      demoMode: false,
       selection: [],
-      visibleIds: [],
       dialogVisible: false,
-      dialogTitle: '添加用户',
       submitting: false,
       form: emptyForm(),
       rules: {
         name: [{ required: true, validator: validateName, trigger: 'blur' }],
         password: [
           { required: true, message: '请输入密码', trigger: 'blur' },
-          { min: 6, max: 12, message: '密码长度需在 6 - 12 位之间', trigger: 'blur' }
+          { min: 6, max: 16, message: '密码长度需在 6 - 16 位之间', trigger: 'blur' }
         ],
-        role: [{ required: true, message: '请选择角色', trigger: 'change' }]
+        checkpassword: [{ required: true, validator: validateCheck, trigger: 'blur' }],
+        userrole: [{ required: true, message: '请选择用户角色', trigger: 'change' }]
       }
     }
   },
   computed: {
-    users() {
-      return state.users
-    },
-    filteredList() {
-      const keyword = this.query.keyword.trim().toLowerCase()
-      const role = this.query.role
-
-      return this.users.filter(item => {
-        const matchKeyword = !keyword || item.name.toLowerCase().indexOf(keyword) !== -1
-        const matchRole = !role || item.role === role
-        return matchKeyword && matchRole
-      })
-    },
-    pagedList() {
-      const start = (this.page - 1) * this.size
-      return this.filteredList.slice(start, start + this.size)
+    maxPage() {
+      return Math.max(1, Math.ceil(this.total / this.pageSize))
     }
   },
-  watch: {
-    filteredList() {
-      const maxPage = Math.max(1, Math.ceil(this.filteredList.length / this.size))
-      if (this.page > maxPage) {
-        this.page = maxPage
-      }
-    }
+  mounted() {
+    this.loadPage(1)
   },
   methods: {
-    isVisible(id) {
-      return this.visibleIds.indexOf(id) !== -1
+    /** 调后端分页接口，加载指定页 */
+    loadPage(page) {
+      this.loading = true
+      http
+        .get('/users', { params: { page, pageSize: this.pageSize } })
+        .then(response => {
+          const result = response.data
+          if (result.code !== 1) {
+            throw new Error(result.msg || '加载失败')
+          }
+          this.demoMode = false
+          this.tableData = result.data.rows.map(toRow)
+          this.total = result.data.total
+          this.currentPage = page
+        })
+        .catch(() => {
+          this.useFallback(page)
+        })
+        .finally(() => {
+          this.loading = false
+        })
     },
-    togglePassword(id) {
-      const index = this.visibleIds.indexOf(id)
-      if (index === -1) {
-        this.visibleIds.push(id)
-      } else {
-        this.visibleIds.splice(index, 1)
+
+    /** 演示兜底：线上静态版没有 Java 后端，用 store 里的演示用户照常浏览 */
+    useFallback(page) {
+      if (!this.demoMode) {
+        this.demoMode = true
+        this.$message.info('未连接到 Java 后端，当前展示演示数据；本地启动 quiz-java 后即可联调')
       }
+
+      const kw = this.keyword.trim().toLowerCase()
+      const rows = state.users
+        .filter(item => !kw || item.name.toLowerCase().indexOf(kw) !== -1)
+        .map(item => ({
+          id: item.id,
+          name: item.name,
+          password: '******',
+          isAdmin: item.role === '管理员',
+          role: item.role === '管理员' ? '管理员' : '普通用户',
+          date: item.date || '-'
+        }))
+
+      this.total = rows.length
+      const start = (page - 1) * this.pageSize
+      this.tableData = rows.slice(start, start + this.pageSize)
+      this.currentPage = page
     },
-    handleQuery() {
-      this.page = 1
+
+    /** 关键词查询：走 /findUser（后端返回全量命中列表） */
+    onSearch() {
+      const kw = this.keyword.trim()
+      if (!kw) {
+        this.loadPage(1)
+        return
+      }
+
+      this.loading = true
+      http
+        .get('/findUser', { params: { keyword: kw } })
+        .then(response => {
+          const result = response.data
+          if (result.code !== 1) {
+            throw new Error(result.msg || '查询失败')
+          }
+          this.demoMode = false
+          this.tableData = result.data.map(toRow)
+          this.total = result.data.length
+          this.currentPage = 1
+        })
+        .catch(() => {
+          this.useFallback(1)
+        })
+        .finally(() => {
+          this.loading = false
+        })
     },
+
     handleReset() {
-      this.query.keyword = ''
-      this.query.role = ''
-      this.page = 1
+      this.keyword = ''
+      this.loadPage(1)
     },
     handleSizeChange(val) {
-      this.size = val
-      this.page = 1
+      this.pageSize = val
+      this.loadPage(1)
     },
     handleCurrentChange(val) {
-      this.page = val
+      this.loadPage(val)
     },
     handleSelectionChange(rows) {
       this.selection = rows
     },
     openAdd() {
-      this.dialogTitle = '添加用户'
       this.form = emptyForm()
-      this.dialogVisible = true
-    },
-    openEdit(row) {
-      this.dialogTitle = '编辑用户'
-      this.form = Object.assign({}, row)
       this.dialogVisible = true
     },
     handleDialogClosed() {
@@ -293,43 +341,99 @@ export default {
         this.$refs.userForm.resetFields()
       }
     },
+
+    /** 添加用户：管理端走 /addUser，角色由表单传入（用户端注册走 /register，固定普通用户） */
     submitForm() {
       this.$refs.userForm.validate(valid => {
         if (!valid) return
 
         this.submitting = true
-        const payload = {
-          name: this.form.name.trim(),
-          password: this.form.password,
-          role: this.form.role
-        }
-
-        // 模拟请求耗时，让按钮的 loading 态可见
-        window.setTimeout(() => {
-          if (this.form.id) {
-            store.updateUser(this.form.id, payload)
-            this.$message.success('修改成功')
-          } else {
-            store.addUser(payload)
-            this.$message.success('添加成功')
-          }
-          this.submitting = false
-          this.dialogVisible = false
-        }, 260)
+        http
+          .post('/addUser', {
+            username: this.form.name.trim(),
+            password: this.form.password,
+            checkpassword: this.form.checkpassword,
+            userrole: this.form.userrole
+          })
+          .then(response => {
+            const result = response.data
+            if (result.code !== 1) {
+              this.$message.error(result.msg || '添加失败')
+              return
+            }
+            this.$message.success(this.form.userrole === '1' ? '已添加管理员' : '已添加普通用户')
+            this.dialogVisible = false
+            this.loadPage(1)
+          })
+          .catch(error => {
+            this.$message.error(errorText(error, '添加失败，请确认后端已启动'))
+          })
+          .finally(() => {
+            this.submitting = false
+          })
       })
     },
+
+    /** 重置密码（验收条件 3.2 第 4 条）：重置为初始密码 123456 */
+    handleResetPwd(row) {
+      this.$confirm(
+        '确定要把「' + row.name + '」的密码重置为初始密码 123456 吗？',
+        '重置密码',
+        {
+          confirmButtonText: '确定重置',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
+        .then(() => {
+          return http.get('/resetPassword', { params: { id: row.id } })
+        })
+        .then(response => {
+          if (!response) return
+          const result = response.data
+          if (result.code !== 1) {
+            this.$message.error(result.msg || '重置失败')
+            return
+          }
+          this.$message.success(result.msg || '密码已重置为 123456')
+        })
+        .catch(error => {
+          if (error && error.response) {
+            this.$message.error(errorText(error, '重置失败'))
+          }
+        })
+    },
+
     handleDelete(row) {
-      this.$confirm('确定要删除用户「' + row.name + '」吗？删除后不可恢复。', '删除确认', {
+      this.$confirm('确定要删除用户「' + row.name + '」吗？删除后该用户无法登录。', '删除确认', {
         confirmButtonText: '确定删除',
         cancelButtonText: '取消',
         type: 'warning'
       })
         .then(() => {
-          store.removeUsers([row.id])
-          this.$message.success('删除成功')
+          if (this.demoMode) {
+            store.removeUsers([row.id])
+            this.$message.success('删除成功（演示数据）')
+            this.useFallback(this.currentPage)
+            return
+          }
+          return http.get('/deleteById', { params: { id: row.id } }).then(response => {
+            const result = response.data
+            if (result.code !== 1) {
+              this.$message.error(result.msg || '删除失败')
+              return
+            }
+            this.$message.success('删除成功')
+            this.loadPage(this.currentPage)
+          })
         })
-        .catch(() => {})
+        .catch(error => {
+          if (error && error.response) {
+            this.$message.error(errorText(error, '删除失败'))
+          }
+        })
     },
+
     handleBatchDelete() {
       if (!this.selection.length) return
       this.$confirm('确定要删除选中的 ' + this.selection.length + ' 位用户吗？', '批量删除', {
@@ -338,28 +442,28 @@ export default {
         type: 'warning'
       })
         .then(() => {
-          store.removeUsers(this.selection.map(item => item.id))
+          if (this.demoMode) {
+            store.removeUsers(this.selection.map(item => item.id))
+            this.selection = []
+            this.$message.success('批量删除成功（演示数据）')
+            this.useFallback(this.currentPage)
+            return
+          }
+          const ids = this.selection.map(item => item.id)
+          // 后端只有按 id 单条删除的接口，这里逐条调用
+          return Promise.all(ids.map(id => http.get('/deleteById', { params: { id } })))
+        })
+        .then(responses => {
+          if (!responses) return
           this.selection = []
           this.$message.success('批量删除成功')
+          this.loadPage(this.currentPage)
         })
-        .catch(() => {})
-    },
-    handleExport() {
-      const data = {
-        exportAt: new Date().toISOString(),
-        users: state.users,
-        questions: state.questions
-      }
-      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json;charset=utf-8' })
-      const url = URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = 'quiz-admin-data.json'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      URL.revokeObjectURL(url)
-      this.$message.success('数据已导出为 quiz-admin-data.json')
+        .catch(error => {
+          if (error && error.response) {
+            this.$message.error(errorText(error, '批量删除失败'))
+          }
+        })
     }
   }
 }
@@ -385,12 +489,6 @@ export default {
 .cell-name {
   font-weight: 600;
   color: #303133;
-}
-
-.pwd-cell {
-  display: flex;
-  align-items: center;
-  gap: 8px;
 }
 
 .pwd-text {

@@ -1,5 +1,6 @@
 import Vue from 'vue'
 import VueRouter from 'vue-router'
+import { getToken } from '@/utils/http'
 
 Vue.use(VueRouter)
 
@@ -7,6 +8,12 @@ const routes = [
   {
     path: '/',
     redirect: '/dashboard'
+  },
+  {
+    path: '/login',
+    name: 'login',
+    component: () => import('@/views/element/LoginView.vue'),
+    meta: { title: '登录' }
   },
   {
     path: '/dashboard',
@@ -34,6 +41,21 @@ const routes = [
 
 const router = new VueRouter({
   routes
+})
+
+/**
+ * 导航守卫（对应视频 10-6：实现导航守卫、退出功能）。
+ * 除了登录页，其它页面都必须先登录拿到 token 才能进。
+ */
+router.beforeEach((to, from, next) => {
+  const loggedIn = !!getToken()
+  if (to.path === '/login') {
+    next()
+  } else if (!loggedIn) {
+    next('/login')
+  } else {
+    next()
+  }
 })
 
 router.afterEach(to => {
